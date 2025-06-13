@@ -55,16 +55,18 @@
     <script src="https://unpkg.com/geotiff@2.0.7/dist/geotiff.min.js"></script>
 
     <script>
-        const defaultLat = 10.9634;
-        const defaultLng = 76.0125;
-        const defaultZoom = 13;
+        document.addEventListener('DOMContentLoaded', function () {
+            const defaultLat = 10.9634;
+            const defaultLng = 76.0125;
+            const defaultZoom = 13;
 
-        var mymap = L.map('map').setView([defaultLat, defaultLng], defaultZoom);
+            var mymap = L.map('map').setView([defaultLat, defaultLng], defaultZoom);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(mymap);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(mymap);
+        })
     </script>
 </body>
 
