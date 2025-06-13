@@ -15,23 +15,40 @@
 
     <style>
         #map {
-            height: 1800px;
+            height: 500px;
+            width: 100%;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
     </style>
 
 </head>
 
-<body>
-    <div id="map"></div>
+<body class="font-sans bg-gray-100 flex flex-col items-center justify-center min-h-screen p-4">
+    <div class="container mx-auto p-6 bg-white rounded-lg shadow-xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Leaflet Map</h1>
+
+        <!-- Leaflet map -->
+        <div id="map" class="mb-6"></div>
+
+        <!-- upload button -->
+        <div id="upload-area"
+            class="w-full p-4 bg-gray-50 rounded-lg shadow-inner flex flex-col items-center justify-center">
+            <p class="text-gray-700 text-lg font-semibold">Upload</p>
+        </div>
+    </div>
 
     <script>
-        var map = L.map('map').setView([51.505, -0.09], 13);
+        const defaultLat = 10.9634;
+        const defaultLng = 76.0125;
+        const defaultZoom = 13;
 
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        var mymap = L.map('map').setView([defaultLat, defaultLng], defaultZoom);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
-            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        }).addTo(map);
-
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(mymap);
     </script>
 </body>
 
