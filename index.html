@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Leaflet</title>
     <!-- Tailwind -->
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
@@ -52,7 +52,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <!-- GeoTIFF.js library for reading GeoTIFF data -->
-    <script src="https://unpkg.com/geotiff@2.0.7/dist/geotiff.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
@@ -66,7 +66,69 @@
                 maxZoom: 19,
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(mymap);
-        })
+
+            // Get references to the file input and status message div
+            const tiffUploadInput = document.getElementById('tiffUpload');
+            const statusMessageDiv = document.getElementById('status-message');
+
+            // Function to display messages to the user
+            function showStatus(message, isError = false) {
+                statusMessageDiv.textContent = message;
+                statusMessageDiv.classList.remove('hidden', 'bg-red-200', 'text-red-700', 'bg-green-200', 'text-green-700');
+                if (isError) {
+                    statusMessageDiv.classList.add('bg-red-200', 'text-red-700');
+                } else {
+                    statusMessageDiv.classList.add('bg-gray-200', 'text-gray-600');
+                }
+                statusMessageDiv.classList.remove('hidden');
+            }
+
+            // Add event listener for file input change
+            tiffUploadInput.addEventListener('change', async function (event) {
+                const file = event.target.files[0];
+
+                if (!file) {
+                    showStatus("No file selected.", true);
+                    return;
+                }
+
+                // Check if the file is a TIFF based on its name (simple check)
+                if (!file.name.toLowerCase().endsWith('.tif') && !file.name.toLowerCase().endsWith('.tiff')) {
+                    showStatus("Please upload a .tif or .tiff file", true);
+
+                    event.target.value = '';
+                    return;
+                }
+
+                showStatus("Processing file...");
+
+                try {
+                    // Read the file content as an ArrayBuffer
+                    const arrayBuffer = await file.arrayBuffer();
+
+                    if (typeof GeoTIFF === 'undefined') {
+                        throw new Error("GeoTIFF library not loaded correctly. 'GeoTIFF' is undefined. Check console for details");
+                    }
+
+                    // Parse the GeoTIFF using geotiff.js
+                    const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+
+                    // Get the primary image from the TIFF
+                    const image = await tiff.getImage();
+
+                    console.log('GeoTIFF Image Loaded:', image);
+                    console.log('Image Width:', image.getWidth());
+                    console.log('Image Height:', image.getHeight());
+
+                    showStatus(`File "${file.name}" loaded and parsed successfully. Image dimensions: ${image.getWidth()}x${image.getHeight()}`);
+                } catch (error) {
+                    console.error("Error reading or parsing TIFF file:", error);
+                    showStatus(`Error processing file: ${error.message}. Please ensure it's a valid GeoTIFF.`, true);
+
+                    event.target.value = '';
+                }
+            });
+        });
     </script>
 </body>
 
