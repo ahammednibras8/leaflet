@@ -33,17 +33,33 @@
         <div id="upload-area"
             class="w-full p-4 bg-gray-50 rounded-lg shadow-inner flex flex-col items-center justify-center">
             <p class="text-gray-700 text-lg font-semibold">Upload</p>
-            <!-- file input -->
-            <input type="file" id="tiffUpload" accept=".tif, .tiff" class="hidden">
 
-            <label for="tiffUpload"
-                class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105 mb-4">
-                Upload GeoTIFF
-            </label>
+            <div id="upload-area"
+                class="w-full p-4 bg-gray-50 rounded-lg shadow-inner flex flex-col items-center justify-center">
+                <p class="text-gray-700 text-lg font-semibold mb-4">Upload your GeoTIFF file here</p>
 
-            <div id="status-message"
-                class="text-gray-600 text-sm mt-2 p-2 bg-gray-200 rounded-md w-full text-center hidden">
-                <!-- Messages will appear here -->
+                <div class="flex flex-col md:flex-row items-center justify-center gap-4">
+                    <!-- Hidden file input -->
+                    <input type="file" id="tiffUpload" accept=".tif, .tiff" class="hidden">
+
+                    <!-- Label styled as a button -->
+                    <label for="tiffUpload"
+                        class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105 mb-4">
+                        Upload GeoTIFF
+                    </label>
+
+                    <button id="clearOverlayBtn"
+                        class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:scale-105 mb-4"
+                        style="display: none;">
+                        Clear Overlay
+                    </button>
+                </div>
+
+                <!-- Div to display messages to the user -->
+                <div id="status-message"
+                    class="text-gray-600 text-sm mt-2 p-2 bg-gray-200 rounded-md w-full text-center hidden">
+                    <!-- Messages will appear here -->
+                </div>
             </div>
         </div>
     </div>
@@ -52,15 +68,29 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <!-- GeoTIFF.js library for reading GeoTIFF data -->
-    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+    <!-- Proj4js library for coordinate transformations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.15.0/proj4.js"
+        integrity="sha512-zlBm5j/0UjgCzqBVLkATd/2b9Yun4SzATXJ7v1T2KfjmP0iw8FUcG5mPD60SrdxU+tRkACm3IQRq55pEkp9Qow=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
     <script>
+        if (typeof proj4 !== 'undefined') {
+            proj4.defs("EPSG:32631", "+proj=utm +zone=31 +ellps=WGS84 +datum=WGS84 +units=m +no_defs");
+            proj4.defs("EPSG:32632", "+proj=utm +zone=32 +ellps=WGS84 +datum=WGS84 +units=m +no_defs");
+            proj4.defs("EPSG:32633", "+proj=utm +zone=33 +ellps=WGS84 +datum=WGS84 +units=m +no_defs");
+            console.log("Proj4js UTM zone definitions loaded.");
+        } else {
+            console.error("Proj4js is not defined. Coordinate transformation will not work.");
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             const defaultLat = 10.9634;
             const defaultLng = 76.0125;
             const defaultZoom = 13;
 
             var mymap = L.map('map').setView([defaultLat, defaultLng], defaultZoom);
+            let currentImageOverlay = null;
 
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
@@ -70,6 +100,7 @@
             // Get references to the file input and status message div
             const tiffUploadInput = document.getElementById('tiffUpload');
             const statusMessageDiv = document.getElementById('status-message');
+            const clearOverlayBtn = document.getElementById('clearOverlayBtn');
 
             // Function to display messages to the user
             function showStatus(message, isError = false) {
@@ -82,6 +113,19 @@
                 }
                 statusMessageDiv.classList.remove('hidden');
             }
+
+            // Function to clear the current image overlay
+            function clearOverlay() {
+                if (currentImageOverlay) {
+                    mymap.removeLayer(currentImageOverlay);
+                    currentImageOverlay = null;
+                    showStatus("Overlay cleared");
+                    clearOverlayBtn.style.display = 'none';
+                }
+            }
+
+            // Add event listener for clear button
+            clearOverlayBtn.addEventListener('click', clearOverlay);
 
             // Add event listener for file input change
             tiffUploadInput.addEventListener('change', async function (event) {
@@ -101,6 +145,7 @@
                 }
 
                 showStatus("Processing file...");
+                clearOverlay();
 
                 try {
                     // Read the file content as an ArrayBuffer
@@ -112,20 +157,201 @@
 
                     // Parse the GeoTIFF using geotiff.js
                     const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
-
-                    // Get the primary image from the TIFF
                     const image = await tiff.getImage();
 
-                    console.log('GeoTIFF Image Loaded:', image);
-                    console.log('Image Width:', image.getWidth());
-                    console.log('Image Height:', image.getHeight());
+                    const width = image.getWidth();
+                    const height = image.getHeight();
 
-                    showStatus(`File "${file.name}" loaded and parsed successfully. Image dimensions: ${image.getWidth()}x${image.getHeight()}`);
+                    if (width === 0 || height === 0) {
+                        throw new Error("Invalid image dimensions (width or height is zero).");
+                    }
+
+                    // Check for georeferencing information
+                    let georeferencingFound = false;
+                    let transform;
+                    try {
+                        transform = image.getGeoTransform();
+                        if (transform && transform.length === 6) {
+                            georeferencingFound = true;
+                            console.log("Affine transformation found.");
+                        }
+                    } catch (e) {
+                        console.warn("getGeoTransform failed: ", e.message);
+                    }
+
+                    if (!georeferencingFound) {
+                        try {
+                            const tiePoints = image.getTiePoints();
+                            if (tiePoints && tiePoints.length > 0) {
+                                georeferencingFound = true;
+                                console.log("Tie points found");
+                            }
+                        } catch (e) {
+                            console.warn("getTiePoints failed:", e.message);
+                        }
+                    }
+
+                    if (!georeferencingFound) {
+                        throw new Error("The uploaded TIFF file does not contain sufficient georeferencing information (e.g., affine transformation tags or tie points) required for automatic overlay. Please ensure it is a valid GeoTIFF.");
+                    }
+
+                    // Extract and Transform Bounding Box
+                    const [minX, minY, maxX, maxY] = image.getBoundingBox();
+                    const geoKeys = image.getGeoKeys();
+
+                    let southWestLat, southWestLng, northEastLat, northEastLng;
+
+                    const projectedCrsCode = geoKeys.ProjectedCSTypeGeoKey;
+                    const geographicCrsCode = geoKeys.GeographicTypeGeoKey;
+
+                    let sourceEPSG = null;
+
+                    if (projectedCrsCode) {
+                        sourceEPSG = `EPSG:${projectedCrsCode}`;
+                    } else if (geographicCrsCode) {
+                        sourceEPSG = "EPSG:4326";
+                    }
+
+                    if (sourceEPSG && typeof proj4 !== 'undefined') {
+                        try {
+                            if (sourceEPSG === "EPSG:4326") {
+                                // Already in WGS84, use directly
+                                southWestLng = minX;
+                                southWestLat = minY;
+                                northEastLng = maxX;
+                                northEastLat = maxY;
+                                console.log("Using WGS84 coordinates directly.");
+                            } else if (proj4.defs(sourceEPSG)) {
+                                // Transform projected coordinates to WGS84 Lat/Lng
+                                const sw = proj4(sourceEPSG, "EPSG:4326", [minX, minY]);
+                                southWestLng = sw[0];
+                                southWestLat = sw[1];
+
+                                const ne = proj4(sourceEPSG, "EPSG:4326", [maxX, maxY]);
+                                northEastLng = ne[0];
+                                northEastLat = ne[1];
+                                console.log(`Transformed using ${sourceEPSG}: SW: [${southWestLat}, ${southWestLng}], NE: [${northEastLat}, ${northEastLng}]`);
+                            } else {
+                                throw new Error(`Projection ${sourceEPSG} is not defined in Proj4js.`);
+                            }
+                        } catch (projError) {
+                            console.error(`Projection transformation failed for ${sourceEPSG}:`, projError);
+                            throw new Error(`Could not reproject GeoTIFF from ${sourceEPSG}. Ensure Proj4js has the necessary projection definition.`);
+                        }
+                    } else {
+                        // Fallback if no CRS detected or proj4 not available
+                        console.warn("No specific CRS or Proj4js definition found. Using approximate default bounds. Overlay might be inaccurate.");
+                        southWestLat = 10.9;
+                        southWestLng = 75.9;
+                        northEastLat = 11.1;
+                        northEastLng = 76.2;
+                        showStatus("Warning: Could not determine or reproject CRS. Using approximate bounds. Overlay might be inaccurate.", false);
+                    }
+
+                    const mapBounds = L.latLngBounds([southWestLat, southWestLng], [northEastLat, northEastLng]);
+
+                    // Render Image Data to Canvas
+                    let pixelData;
+                    try {
+                        pixelData = await image.readRGB(); // Try reading as RGB
+                        if (!pixelData || pixelData.length === 0) {
+                            throw new Error("readRGB() returned no data.");
+                        }
+                    } catch (rgbError) {
+                        console.warn("readRGB() failed, attempting readRGBA():", rgbError);
+                        try {
+                            pixelData = await image.readRGBA(); // Fallback to RGBA
+                            if (!pixelData || pixelData.length === 0) {
+                                throw new Error("readRGBA() returned no data.");
+                            }
+                        } catch (rgbaError) {
+                            console.error("Both readRGB() and readRGBA() failed. Trying generic rasters:", rgbaError);
+                            // Fallback to raw rasters and manual RGBA construction
+                            const rasters = await image.readRasters();
+                            if (!rasters || rasters.length === 0) {
+                                throw new Error("Could not read any raster data from the TIFF.");
+                            }
+
+                            // Determine bit depth for normalization
+                            const bitsPerSample = image.getBitsPerSample()[0] || 8; // Default to 8-bit
+                            const maxVal = Math.pow(2, bitsPerSample) - 1;
+
+                            const rgbaConverted = new Uint8ClampedArray(width * height * 4);
+                            for (let i = 0; i < width * height; i++) {
+                                rgbaConverted[i * 4] = (rasters[0][i] / maxVal) * 255; // R
+                                rgbaConverted[i * 4 + 1] = (rasters[1] ? (rasters[1][i] / maxVal) * 255 : rgbaConverted[i * 4]); // G (or R if grayscale)
+                                rgbaConverted[i * 4 + 2] = (rasters[2] ? (rasters[2][i] / maxVal) * 255 : rgbaConverted[i * 4]); // B (or R if grayscale)
+                                rgbaConverted[i * 4 + 3] = (rasters[3] ? (rasters[3][i] / maxVal) * 255 : 255); // A (or opaque)
+                            }
+                            pixelData = rgbaConverted; // Use the manually converted data
+                        }
+                    }
+
+                    // Ensure pixelData is Uint8ClampedArray for ImageData constructor
+                    let finalClampedRgba;
+                    if (pixelData instanceof Uint8ClampedArray) {
+                        finalClampedRgba = pixelData;
+                    } else if (pixelData instanceof Uint8Array || pixelData instanceof Uint16Array || pixelData instanceof Float32Array) {
+                        // Normalize and convert to Uint8ClampedArray
+                        const rgbaTemp = new Uint8ClampedArray(width * height * 4);
+                        const numChannels = pixelData.length / (width * height);
+                        const maxVal = Math.pow(2, image.getBitsPerSample()[0] || 8) - 1; // Default to 8-bit
+
+                        if (numChannels === 3) { // RGB
+                            for (let i = 0, j = 0; i < pixelData.length; i += 3, j += 4) {
+                                rgbaTemp[j] = (pixelData[i] / maxVal) * 255;
+                                rgbaTemp[j + 1] = (pixelData[i + 1] / maxVal) * 255;
+                                rgbaTemp[j + 2] = (pixelData[i + 2] / maxVal) * 255;
+                                rgbaTemp[j + 3] = 255; // Alpha
+                            }
+                        } else if (numChannels === 4) { // RGBA
+                            for (let i = 0; i < pixelData.length; i++) {
+                                rgbaTemp[i] = (pixelData[i] / maxVal) * 255;
+                            }
+                        } else if (numChannels === 1) { // Grayscale
+                            for (let i = 0, j = 0; i < pixelData.length; i++, j += 4) {
+                                const gray = (pixelData[i] / maxVal) * 255;
+                                rgbaTemp[j] = gray;
+                                rgbaTemp[j + 1] = gray;
+                                rgbaTemp[j + 2] = gray;
+                                rgbaTemp[j + 3] = 255;
+                            }
+                        } else {
+                            throw new Error(`Unsupported number of channels: ${numChannels}`);
+                        }
+                        finalClampedRgba = rgbaTemp;
+                    } else {
+                        throw new Error("Unknown pixel data type returned from GeoTIFF.js.");
+                    }
+
+                    const imageData = new ImageData(finalClampedRgba, width, height);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+
+                    ctx.putImageData(imageData, 0, 0);
+
+                    // Convert canvas to a data URL (e.g., PNG)
+                    const imageUrl = canvas.toDataURL('image/png');
+
+                    // --- Add the image overlay to the map ---
+                    currentImageOverlay = L.imageOverlay(imageUrl, mapBounds, {
+                        opacity: 0.8 // Add some transparency for better visibility with base map
+                    }).addTo(mymap);
+
+                    // Fit the map to the bounds of the new overlay
+                    mymap.fitBounds(mapBounds);
+
+                    showStatus(`File "${file.name}" loaded, parsed, and overlaid successfully. Dimensions: ${width}x${height}. CRS: ${sourceEPSG || 'Unknown'}`);
+                    clearOverlayBtn.style.display = 'inline-block'; // Show clear button
+
                 } catch (error) {
                     console.error("Error reading or parsing TIFF file:", error);
-                    showStatus(`Error processing file: ${error.message}. Please ensure it's a valid GeoTIFF.`, true);
-
+                    showStatus(`Error processing file: ${error.message}. Please ensure it's a valid GeoTIFF with proper georeferencing.`, true);
                     event.target.value = '';
+                    clearOverlayBtn.style.display = 'none'; // Hide clear button
                 }
             });
         });
